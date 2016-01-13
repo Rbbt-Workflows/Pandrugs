@@ -10,7 +10,7 @@ module Pandrugs
   end
 
   Pandrugs.claim Pandrugs.gene_drugs, :proc do 
-    fields = %w(standard_drug_name status pathology cancer extra extra2 target_marker resistance alteration score)
+    fields = %w(source standard_drug_name family status pathology cancer extra extra2 target_marker resistance alteration score)
     tsv = Pandrugs._pandrug_file.tsv :header_hash => "", :merge => true, :zipped => true, :fix => Proc.new{|l| l.gsub(/\s+\|\s+/,',')}, :fields => fields
     tsv.key_field = "Associated Gene Name"
     tsv.to_s

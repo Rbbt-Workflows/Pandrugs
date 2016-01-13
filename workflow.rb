@@ -5,6 +5,7 @@ Misc.add_libdir if __FILE__ == $0
 
 require 'rbbt/sources/organism'
 require 'rbbt/sources/Pandrugs'
+require 'rbbt/knowledge_base/Pandrugs'
 
 module Pandrugs
   extend Workflow

@@ -9,6 +9,9 @@ Pandrugs=/$PWD filter="*.rb *.rake Rakefile *.rdoc *.R *.sh *.js *.haml *.sass *
    sources=sources{
     Pandrugs.rb
    }
+   knowledge_base=knowledge_base{
+    Pandrugs.rb
+   }
   }
  }
 
