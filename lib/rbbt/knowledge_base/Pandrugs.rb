@@ -18,6 +18,8 @@ module Pandrugs
   def self.knowledge_base
     @knowledge_base ||= begin
                           kb = KnowledgeBase.new self.knowledge_base_dir, self.organism
+                          kb.namespace = Pandrugs.organism
+                          kb.format["Gene"] = "Ensembl Gene ID"
                           kb.register "gene_drugs", Pandrugs.gene_drugs, :source => "Associated Gene Name", :target => "standard_drug_name", :merge => true
                           kb
                         end

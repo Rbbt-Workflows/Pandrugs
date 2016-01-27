@@ -4,9 +4,17 @@
   - affected_genes = sample.get_genes :affected
   - broken_genes = sample.get_genes(:broken).name
   - organism = affected_genes.organism
+  - tsv = Pandrugs.job(:annotate_genes, sample, :genes => affected_genes, :organism => organism).run
+  - tsv.add_field "Broken" do |drug,values|
+    - broken_genes.include? values.first
   = table do
-    - tsv = Pandrugs.job(:annotate_genes, sample, :genes => affected_genes, :organism => organism).run
-    - tsv.add_field "Broken" do |drug,values|
-      - broken_genes.include? values.first
     - tsv
 
+  = graph Pandrugs.knowledge_base do |kb|
+    - kb.format["Gene"] = "Ensembl Gene ID"
+    - a = kb.subset('gene_drugs', :source => affected_genes, :target => :all)
+    - a = a.select{|a| a.info["score"].to_f > 0.7}
+    - add_associations a
+    - p = Genomics.knowledge_base.subset("pina", :source => affected_genes,  :target => affected_genes)
+    - add_associations p
+    - add_aesthetic :edge, :color, :mapper, "status", {"Approved" => "green"}
