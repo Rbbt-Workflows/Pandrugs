@@ -7,6 +7,10 @@
   - tsv = Pandrugs.job(:annotate_genes, sample, :genes => affected_genes, :organism => organism).run
   - tsv.add_field "Broken" do |drug,values|
     - broken_genes.include? values.first
+  - scores = Pandrugs.job(:gene_score, sample.sample_code).run
+
+  - tsv = tsv.attach scores, :identifiers => Organism.identifiers(sample.organism)
+
   = table do
     - tsv
 
@@ -18,3 +22,5 @@
     - p = Genomics.knowledge_base.subset("pina", :source => affected_genes,  :target => affected_genes)
     - add_associations p
     - add_aesthetic :edge, :color, :mapper, "status", {"Approved" => "green"}
+    - add_aesthetic :node, :size, :mapper, "id", scores.to_single
+  

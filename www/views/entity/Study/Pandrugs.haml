@@ -1,0 +1,34 @@
+- study = entity
+- action_card = ActionCard.new 
+= action_card_render action_card do
+  - kb = study.knowledge_base
+  - affected_genes = study.get_genes :affected
+  - broken_genes = study.get_genes(:broken).name
+  - organism = affected_genes.organism
+  - tsv = Pandrugs.job(:annotate_genes, study, :genes => affected_genes, :organism => organism).run.to_double
+  - index = Organism.identifiers(study.organism).index :target => "Ensembl Gene ID", :persist => true
+
+  - tsv.add_field "Broken" do |drug,values|
+    - broken_genes.include? values.first.first
+  - tsv.add_field "Sample" do |drug,values|
+    - gene = values.first.first
+    - new_gene = index[gene]
+    - m = kb.subset('sample_genes', :source => :all, :target => [new_gene])
+    - m.select{|i| i.info["broken"] == 'true'}.source
+
+  - samples = tsv.column("Sample").values.flatten.uniq
+  - header "Sample", Sample, :cohort => study
+  = table do
+    - tsv
+
+  - if tsv.size < 1000
+    = graph Pandrugs.knowledge_base do |kb|
+      - kb.format["Gene"] = "Ensembl Gene ID"
+      - a = kb.subset('gene_drugs', :source => affected_genes, :target => :all)
+      - a = a.select{|a| a.info["score"].to_f > 0.7}
+      - add_associations a
+      - p = Genomics.knowledge_base.subset("pina", :source => a.source,  :target => a.source)
+      - add_associations p
+      - p = study.knowledge_base.subset("sample_genes", :source => samples,  :target => a.source).select{|i|i.info["affected"] == 'true'}
+      - add_associations p
+      - add_aesthetic :edge, :color, :mapper, "status", {"Approved" => "green"}

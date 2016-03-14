@@ -27,6 +27,9 @@ Pandrugs=/$PWD filter="*.rb *.rake Rakefile *.rdoc *.R *.sh *.js *.haml *.sass *
     Sample=Sample{
      Pandrugs.haml
     }
+    Study=Study{
+     Pandrugs.haml
+    }
    }
   }
  }
