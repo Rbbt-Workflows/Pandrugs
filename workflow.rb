@@ -19,7 +19,7 @@ module Pandrugs
   task :annotate_genes => :tsv do |genes, organism|
     gname = Organism.identifiers(organism).index(:target => "Associated Gene Name", :persist => true).chunked_values_at(genes).compact
 
-    matches = Pandrugs.gene_drugs.tsv(:persist => true, :persist_update => true, :merge => true, :type => :double).select(:key => gname)
+    matches = Pandrugs.gene_drugs.tsv(:persist => true, :merge => true, :type => :double).select(:key => gname)
 
     tsv = matches.reorder("standard_drug_name", nil, :zipped => true, :merge => true, :persist => false)
 
