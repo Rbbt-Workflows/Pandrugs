@@ -1,0 +1,67 @@
+- sample = entity
+- action_card = ActionCard.new 
+= action_card_render action_card do
+  - affected_genes = sample.get_genes :affected
+  - broken_genes = sample.get_genes(:broken).name
+  - organism = affected_genes.organism
+  - tsv = Pandrugs.job(:annotate_genes, sample, :genes => affected_genes, :organism => organism).run
+  - tsv.add_field "Broken" do |drug,values|
+    - broken_genes.include? values.first
+  - scores = Pandrugs.job(:gene_score, sample.sample_code).run
+
+  - scores.identifiers = Organism.identifiers(organism)
+  - scores = scores.change_key("Associated Gene Name")
+  - tsv = tsv.attach scores, :identifiers => Organism.identifiers(sample.organism)
+
+  = table do
+    - tsv
+
+  -#= graph Pandrugs.knowledge_base do |kb|
+    - kb.format["Gene"] = "Ensembl Gene ID"
+    - a = kb.subset('gene_drugs', :source => affected_genes, :target => :all)
+    - a = a.select{|a| a.info["score"].to_f > 0.7}
+    - add_associations a
+    - p = Genomics.knowledge_base.subset("pina", :source => affected_genes,  :target => affected_genes)
+    - add_associations p
+    - add_aesthetic :edge, :color, :mapper, "status", {"Approved" => "green"}
+    - add_aesthetic :node, :size, :mapper, "id", scores.to_single
+  
+  - kb = @step.knowledge_base
+  - kb.register :pandrugs, tsv
+  - kb.get_index :pandrugs
+
+  .ui.segment#plot(style='height:800px;')
+    #plot_window(style='height:800px;')
+
+  :deferjs
+    var main_genes = #{affected_genes.name.to_json}
+    var scores = #{scores.to_single.to_json}
+
+    m.sync([rbbt.plots.graph.parents('step:pandrugs', main_genes)]).then(function(res){
+      passociations = res[0]
+
+      var model = {}
+      model.associations = {}
+      model.associations['step:pandrugs'] = passociations
+
+      model.rules = []
+      model.aes_rules = []
+      model.rules.push({entity_type: "Associated Gene Name", property: 'name' })
+      model.rules.push({entity_type: "Associated Gene Name", property: 'max_transcript_length', _extract: function(x){return Math.log(x)}  })
+
+      model.aes_rules.push({aes: "label", name: 'name' })
+      model.aes_rules.push({entity_type: "Associated Gene Name", aes: "color", name: 'code', mapper:'gradient', mapper_obj: scores})
+
+      model.edge_rules = []
+      model.edge_rules.push({name: "score", info:'score'})
+      model.edge_aes_rules = []
+      model.edge_aes_rules.push({aes: "color", name:'score', mapper:'gradient'})
+
+      rbbt.plots.graph.view_cytoscapejs(model, document.getElementById('plot_window')).then(function(cy){
+        console.log(cy)
+      })
+    })
+
+
+
+

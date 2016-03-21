@@ -9,6 +9,7 @@ require 'rbbt/sources/clinvar'
 require 'rbbt/knowledge_base/Pandrugs'
 
 Workflow.require_workflow "Sample"
+Workflow.require_workflow "Study"
 Workflow.require_workflow "InterPro"
 module Pandrugs
   extend Workflow
@@ -272,10 +273,77 @@ module Pandrugs
       values.max
     end
   end
+
 end
 
-#require 'Pandrugs/tasks/basic.rb'
+module Sample
+  dep :gene_mutation_status
+  dep Pandrugs, :gene_score
+  task :pandrugs => :tsv do
 
-#require 'rbbt/knowledge_base/Pandrugs'
-#require 'rbbt/entity/Pandrugs'
+    gene_status = step(:gene_mutation_status).load
+    affected_genes = gene_status.select("affected" => "true").keys
+    broken_genes = gene_status.select("broken" => "true").keys
 
+    broken_genes = Translation.translate(organism, "Associated Gene Name", broken_genes)
+
+    tsv = Pandrugs.job(:annotate_genes, sample, :genes => affected_genes, :organism => organism).run
+
+    tsv.add_field "Broken" do |drug,values|
+      broken_genes.include? values.first
+    end
+    scores = step(:gene_score).load
+
+    scores.identifiers = Organism.identifiers(organism)
+    scores.change_key("Associated Gene Name")
+    tsv = tsv.attach scores, :identifiers => Organism.identifiers(organism)
+
+    tsv
+  end
+end
+
+
+#module Study
+#
+#  extend Workflow
+#
+#  dep Sample, :pandrugs do |jobname,options|
+#    study = Study.setup(jobname.dup)
+#    jobs = study.genotyped_samples.collect{|sample| Sample.setup(sample, :cohort => study); sample.pandrugs(:job, options) }.flatten
+#    Misc.bootstrap(jobs, 3, :bar => "Processing gene_sample_mutation_status", :respawn => :always) do |job|
+#      job.produce
+#      nil
+#    end
+#    jobs
+#  end
+#  task :pandrugs => :tsv do
+#    Step.wait_for_jobs dependencies
+#    parser = TSV::Parser.new dependencies.first
+#    fields = parser.fields
+#    fields.unshift "Sample"
+#    header = TSV.header_lines(parser.key_field, parser.fields, parser.options.merge(:type => :double))
+#
+#    io = Misc.open_pipe do |sin|
+#      sin.puts header
+#
+#      TSV.traverse dependencies, :type => :array do |job|
+#        sample = job.clean_name.split(":").last
+#        TSV.traverse job, :type => :array do |line|
+#          next if line =~ /^#/
+#            gene,*rest = line.split("\t")
+#          parts = [gene, sample]
+#          parts.concat rest
+#          sin.puts parts * "\t"
+#        end
+#      end
+#    end
+#
+#    TSV.collapse_stream io
+#  end
+#end
+#
+##require 'Pandrugs/tasks/basic.rb'
+#
+##require 'rbbt/knowledge_base/Pandrugs'
+##require 'rbbt/entity/Pandrugs'
+#
