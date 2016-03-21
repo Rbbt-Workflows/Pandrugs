@@ -344,7 +344,7 @@ module Study
 end
 
 Study.update_task_properties
-Sample.update_tasks_property_bindings
+Sample.update_task_properties
 
 #
 ##require 'Pandrugs/tasks/basic.rb'
