@@ -303,47 +303,53 @@ module Sample
 end
 
 
-#module Study
-#
-#  extend Workflow
-#
-#  dep Sample, :pandrugs do |jobname,options|
-#    study = Study.setup(jobname.dup)
-#    jobs = study.genotyped_samples.collect{|sample| Sample.setup(sample, :cohort => study); sample.pandrugs(:job, options) }.flatten
-#    Misc.bootstrap(jobs, 3, :bar => "Processing gene_sample_mutation_status", :respawn => :always) do |job|
-#      job.produce
-#      nil
-#    end
-#    jobs
-#  end
-#  task :pandrugs => :tsv do
-#    Step.wait_for_jobs dependencies
-#    parser = TSV::Parser.new dependencies.first
-#    fields = parser.fields
-#    fields.unshift "Sample"
-#    header = TSV.header_lines(parser.key_field, parser.fields, parser.options.merge(:type => :double))
-#
-#    io = Misc.open_pipe do |sin|
-#      sin.puts header
-#
-#      TSV.traverse dependencies, :type => :array do |job|
-#        sample = job.clean_name.split(":").last
-#        TSV.traverse job, :type => :array do |line|
-#          next if line =~ /^#/
-#            gene,*rest = line.split("\t")
-#          parts = [gene, sample]
-#          parts.concat rest
-#          sin.puts parts * "\t"
-#        end
-#      end
-#    end
-#
-#    TSV.collapse_stream io
-#  end
-#end
+module Study
+
+  extend Workflow
+
+  dep Sample, :pandrugs do |jobname,options|
+    study = Study.setup(jobname.dup)
+    jobs = study.genotyped_samples.collect{|sample| Sample.setup(sample, :cohort => study); sample.pandrugs(:job, options) }.flatten
+    Misc.bootstrap(jobs, 3, :bar => "Processing gene_sample_mutation_status", :respawn => :always) do |job|
+      job.produce
+      nil
+    end
+    jobs
+  end
+
+  task :pandrugs => :tsv do
+    Step.wait_for_jobs dependencies
+    parser = TSV::Parser.new dependencies.first
+    fields = parser.fields
+    fields.unshift "Sample"
+    header = TSV.header_lines(parser.key_field, parser.fields, parser.options.merge(:type => :double))
+
+    io = Misc.open_pipe do |sin|
+      sin.puts header
+
+      TSV.traverse dependencies, :type => :array do |job|
+        sample = job.clean_name.split(":").last
+        TSV.traverse job, :type => :array do |line|
+          next if line =~ /^#/
+            gene,*rest = line.split("\t")
+          parts = [gene, sample]
+          parts.concat rest
+          sin.puts parts * "\t"
+        end
+      end
+    end
+
+    TSV.collapse_stream io
+  end
+end
+
+Study.update_task_properties
+Sample.update_tasks_property_bindings
+
 #
 ##require 'Pandrugs/tasks/basic.rb'
 #
 ##require 'rbbt/knowledge_base/Pandrugs'
 ##require 'rbbt/entity/Pandrugs'
 #
+
