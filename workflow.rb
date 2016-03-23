@@ -290,7 +290,9 @@ module Sample
     tsv = Pandrugs.job(:annotate_genes, sample, :genes => affected_genes, :organism => organism).run
 
     tsv.add_field "Broken" do |drug,values|
-      broken_genes.include? values.first
+      values.first.collect do |gene|
+        broken_genes.include? gene
+      end
     end
     scores = step(:gene_score).load
 
