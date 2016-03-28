@@ -9,12 +9,15 @@
     - broken_genes.include? values.first
   - scores = Pandrugs.job(:gene_score, sample.sample_code).run
 
+  - scores.identifiers = Organism.identifiers(organism)
+  - scores = scores.change_key("Associated Gene Name")
   - tsv = tsv.attach scores, :identifiers => Organism.identifiers(sample.organism)
+  - tsv = sample.pandrugs
 
   = table do
     - tsv
 
-  = graph Pandrugs.knowledge_base do |kb|
+  -#= graph Pandrugs.knowledge_base do |kb|
     - kb.format["Gene"] = "Ensembl Gene ID"
     - a = kb.subset('gene_drugs', :source => affected_genes, :target => :all)
     - a = a.select{|a| a.info["score"].to_f > 0.7}
@@ -24,3 +27,92 @@
     - add_aesthetic :edge, :color, :mapper, "status", {"Approved" => "green"}
     - add_aesthetic :node, :size, :mapper, "id", scores.to_single
   
+  - kb = @step.knowledge_base
+  - kb.register :pandrugs, tsv
+  - kb.get_index :pandrugs
+
+  .ui.segment#plot(style='height:800px;')
+    #plot_window(style='height:800px;')
+
+  :deferjs
+    var main_genes = #{affected_genes.name.to_json}
+    var _scores = #{tsv.reorder("Associated Gene Name", ["Gene Score"], :zipped => true).to_single.to_json}
+    var scores = {}
+
+    forHash(_scores, function(k,v){
+      scores[k] = parseFloat(v)
+    })
+
+
+    m.sync([rbbt.plots.graph.parents('step:pandrugs', main_genes)]).then(function(res){
+       var passociations = res[0]
+       var good = []
+       var pscores = passociations.info.score
+       for (i in pscores){
+         var x = pscores[i]
+         if (Math.abs(parseFloat(x)) > 0.5)
+          good.push(i)
+       }
+
+       for (k in passociations.info){
+         var val = passociations.info[k]
+         if (typeof val === 'object'){
+           var new_val = []
+           for (i in val){
+             var v = val[i]
+             if (good.includes(i))
+              new_val.push(v)
+           }
+           passociations.info[k] = new_val
+         }
+       }
+
+       for (k in passociations.aes){
+         var val = passociations.aes[k]
+         if (typeof val === 'object'){
+           var new_val = []
+           for (i in val){
+             var v = val[i]
+             if (good.includes(i))
+              new_val.push(v)
+           }
+           passociations.aes[k] = new_val
+         }
+       }
+      
+      
+      var codes = passociations.codes
+      var new_codes = []
+      for (i in codes){
+        var x = codes[i]
+        if (good.includes(i))
+          new_codes.push(x)
+      }
+      passociations.codes = new_codes
+
+      var model = {}
+      model.associations = {}
+      model.associations['step:pandrugs'] = passociations
+
+      model.rules = []
+      model.aes_rules = []
+      model.rules.push({entity_type: "Associated Gene Name", property: 'name' })
+      model.rules.push({entity_type: "Associated Gene Name", property: 'max_transcript_length', _extract: function(x){return Math.log(x)}  })
+
+      model.aes_rules.push({aes: "label", name: 'name' })
+      console.log(scores)
+      model.aes_rules.push({entity_type: "Associated Gene Name", aes: "color", name: 'code', mapper: 'gradient', mapper_obj: scores})
+
+      model.edge_rules = []
+      model.edge_rules.push({name: "score", info:'score'})
+      model.edge_aes_rules = []
+      model.edge_aes_rules.push({aes: "color", name:'score', mapper:'gradient'})
+
+      rbbt.plots.graph.view_cytoscapejs(model, document.getElementById('plot_window')).then(function(cy){
+        console.log(cy)
+      })
+    })
+
+
+
+

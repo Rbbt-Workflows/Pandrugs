@@ -9,16 +9,18 @@
   - index = Organism.identifiers(study.organism).index :target => "Ensembl Gene ID", :persist => true
 
   - tsv.add_field "Broken" do |drug,values|
-    - broken_genes.include? values.first.first
+    - values.first.collect do |gene| 
+      - broken_genes.include? gene
+
   - tsv.add_field "Sample" do |drug,values|
-    - gene = values.first.first
-    - new_gene = index[gene]
-    - m = kb.subset('sample_genes', :source => :all, :target => [new_gene])
-    - m.select{|i| i.info["broken"] == 'true'}.source
+    - genes = values.first
+    - new_genes = index.chunked_values_at genes
+    - m = kb.subset('sample_genes', :source => :all, :target => [new_genes])
+    - m.select{|i| i.info["broken"] == 'true'}.source.uniq
 
   - samples = tsv.column("Sample").values.flatten.uniq
   - header "Sample", Sample, :cohort => study
-  = table do
+  = table :table_caption => "Pandrugs for all #{ study }", :span => :long do
     - tsv
 
   - if tsv.size < 1000
