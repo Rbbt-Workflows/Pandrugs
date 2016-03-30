@@ -23,6 +23,8 @@ module Pandrugs
 
     tsv = matches.reorder("standard_drug_name", nil, :zipped => true, :merge => true, :persist => false)
 
+    tsv.fields = tsv.fields.collect{|f| f == 'score' ? 'Drug Score' : f }
+
     tsv.namespace = organism
     tsv
   end
@@ -130,17 +132,32 @@ module Pandrugs
 
   dep Sample, :sequence_ontology, :principal => true, :non_synonymous => true
   dep Sample, :DbNSFP
-  dep Sample, :genomic_mutation_consequence, :principal => true, :non_synonymous => true
+  dep Sample, :genomic_mutation_splicing_consequence, :principal => true
   task :mi_info4score => :tsv do
     Step.wait_for_jobs dependencies
     tsv = step(:sequence_ontology).load.to_double
-    tsv = tsv.attach(step(:genomic_mutation_consequence).load.to_flat)
+
     tsv = tsv.attach(step(:DbNSFP))
+
+    spl = step(:genomic_mutation_splicing_consequence)
+    tsv = tsv.attach(spl)
+
     organism = step(:organism).load
-    index = Organism.identifiers(organism).index :persist => true
-    tsv.add_field "Ensembl Gene ID" do |mi, values|
-      next unless mi =~ /ENSP/
-      index[mi.partition(":").first]
+    ensp2ensg = Organism.identifiers(organism).index :persist => true
+    enst2ensg = Organism.transcripts(organism).index :persist => true, :target => "Ensembl Gene ID", :fields => ["Ensembl Transcript ID"]
+    tsv.add_field "Ensembl Gene ID" do |mut, values|
+      mis = values["Mutated Isoform"]
+
+      mi_genes = values["Mutated Isoform"].collect{|mi|
+        next unless mi =~ /ENSP/
+          ensp2ensg[mi.partition(":").first]
+      }.compact
+
+      splicing_genes = values["Affected Transcripts"].collect{|t|
+        enst2ensg[t]
+      }.compact
+
+      (mi_genes + splicing_genes).uniq * "|"
     end
   end
 
@@ -184,89 +201,100 @@ module Pandrugs
     pasted = TSV.paste_streams([step(:mi_info4score), step(:genomic_mutation_annotations), step(:mutation_info)])
     parser = TSV::Parser.new pasted, :type => :double
     fields = parser.fields
-    TSV.traverse parser, :into => dumper, :bar => true do |mutation, values|
-      values = values.collect{|v| v.compact.reject{|s| s.empty?}.first }
+    gene_pos = fields.index "Ensembl Gene ID"
+    TSV.traverse parser, :into => dumper, :bar => true do |mutation, lvalues|
       mutation = mutation.first if Array === mutation
+      lvalues = [lvalues[gene_pos]] + lvalues
 
-      info = Hash[*fields.zip(values).flatten]
+      res = Misc.zip_fields(lvalues).collect do |values|
+        #values = values.collect{|v| v.compact.reject{|s| s.empty?}.first }
 
-      mi = info["Mutated Isoform"]
-      if mi
-        protein = mi.partition(":").first
-        gene = ensp2ensg[protein]
-      else
-        gene = info["Ensembl Gene ID"]
-      end
-      gene_name = name_index[gene]
-
-      role = gene_cancer_role[gene_name] || "Oncogene"
-      oncogene = role == 'Oncogene'
-
-      score = 0
-
-      # Damage prediction scores
-      score += 0.125/3 if info["Polyphen2_HDIV_score"].to_f > 0.435
-
-      score += 0.125/3 if info["SIFT_score"].to_f > 0.435
-
-      score += 0.125/3 if info["MetaSVM_score"].to_f > 0  #instead of condel
-
-      score += (oncogene ? 0.125/3 : 0.03125) if info["FATHMM_score"].to_f < -1.5 and info["FATHMM_score"] != -999
-
-
-      # COSMIC Freq
-      mut_samples = cosmic_counts[mutation]
-      gene_samples = cosmic_counts[gene]
-
-      if mut_samples and oncogene
-        mut_samples = mut_samples.to_i
-        if mut_samples > 100
-          score += 0.125/3
-        else
-          score += 0.125/3 * Math.log(mut_samples)/Math.log(max_muts)
+        info = {}
+        fields.zip(values[1..-1]).each do |k,v|
+          info[k] = v if info[k].nil? or info[k].empty?
         end
-      end
 
-      if gene_samples
-        gene_samples = gene_samples.to_i
-        if gene_samples > 100
-          score += oncogene ? 0.125/3 : 0.03125
+        mi = info["Mutated Isoform"]
+        if mi
+          protein = mi.partition(":").first
+          gene = ensp2ensg[protein]
         else
-          score += (oncogene ? 0.125/3 : 0.03125) * Math.log(gene_samples)/Math.log(max_genes)
+          gene = info["Ensembl Gene ID"]
         end
-      end
 
-      # MI type scores
-      score += 0.125 if %w(stop_gain frameshift_variant missense_variant inframe_insertion inframe_deletion).include?(info["SO Term"])
+        gene_name = name_index[gene]
 
-      #ExAC
-      score += 0.125/2 if info["ExAC_Adj_AF"].to_f < 0.01 
+        role = gene_cancer_role[gene_name] || "Oncogene"
+        oncogene = role == 'Oncogene'
 
-      #GMAF
-      score += 0.125/2 if info["1000Gp3_AF"].to_f < 0.01 
+        score = 0
 
-      # Clinvar
-      score += 0.125 if clinvar[mi] == "Pathogenic"
+        # Damage prediction scores
+        score += 0.125/3 if info["Polyphen2_HDIV_score"].to_f > 0.435
 
-      # Zygosity
-      score += (oncogene ? 0.125 : 0.1875) if homozygous.include? mutation
+        score += 0.125/3 if info["SIFT_score"].to_f > 0.435
 
-      # Esenciality
-      score += 0.125 * (essenciality[gene_name] || 0)
+        score += 0.125/3 if info["MetaSVM_score"].to_f > 0  #instead of condel
 
-      # Domains
-      ip_domains = domains[mi] || []
-      pfam_domains = intrp2pfam.values_at(*ip_domains).compact
-      
-      if pfam_domains.any?
-        if (good_pfam_domains & pfam_domains).any?
-          score += 0.125 
-        else
-          score += 0.125/2
+        score += (oncogene ? 0.125/3 : 0.03125) if info["FATHMM_score"].to_f < -1.5 and info["FATHMM_score"] != -999
+
+
+        # COSMIC Freq
+        mut_samples = cosmic_counts[mutation]
+        gene_samples = cosmic_counts[gene]
+
+        if mut_samples and oncogene
+          mut_samples = mut_samples.to_i
+          if mut_samples > 100
+            score += 0.125/3
+          else
+            score += 0.125/3 * Math.log(mut_samples)/Math.log(max_muts)
+          end
         end
-      end
 
-      [gene, score]
+        if gene_samples
+          gene_samples = gene_samples.to_i
+          if gene_samples > 100
+            score += oncogene ? 0.125/3 : 0.03125
+          else
+            score += (oncogene ? 0.125/3 : 0.03125) * Math.log(gene_samples)/Math.log(max_genes)
+          end
+        end
+
+        # MI type scores
+        score += 0.125 if %w(stop_gain frameshift_variant missense_variant inframe_insertion inframe_deletion).include?(info["SO Term"])
+
+        #ExAC
+        score += 0.125/2 if info["ExAC_Adj_AF"].to_f < 0.01 
+
+        #GMAF
+        score += 0.125/2 if info["1000Gp3_AF"].to_f < 0.01 
+
+        # Clinvar
+        score += 0.125 if clinvar[mi] == "Pathogenic"
+
+        # Zygosity
+        score += (oncogene ? 0.125 : 0.1875) if homozygous.include? mutation
+
+        # Esenciality
+        score += 0.125 * (essenciality[gene_name] || 0)
+
+        # Domains
+        ip_domains = domains[mi] || []
+        pfam_domains = intrp2pfam.values_at(*ip_domains).compact
+
+        if pfam_domains.any?
+          if (good_pfam_domains & pfam_domains).any?
+            score += 0.125 
+          else
+            score += 0.125/2
+          end
+        end
+
+        [gene, score]
+      end
+      res.extend MultipleResult
+      res
     end
 
     TSV.open(dumper.stream, :type => :double, :merge => true).to_list do |values|
@@ -278,27 +306,21 @@ end
 
 module Sample
   dep :gene_mutation_status
+  dep :organism
+  dep :affected_genes, :principal => true
   dep Pandrugs, :gene_score
+  dep Pandrugs, :annotate_genes, :genes => :affected_genes, :organism => :organism
   task :pandrugs => :tsv do
 
     gene_status = step(:gene_mutation_status).load
     affected_genes = gene_status.select("affected" => "true").keys
-    broken_genes = gene_status.select("broken" => "true").keys
+    tsv = step(:annotate_genes).load
+    tsv.swap_id("Associated Gene Name", "Ensembl Gene ID", :persist => true)
 
-    broken_genes = Translation.translate(organism, "Associated Gene Name", broken_genes)
-
-    tsv = Pandrugs.job(:annotate_genes, sample, :genes => affected_genes, :organism => organism).run
-
-    tsv.add_field "Broken" do |drug,values|
-      values.first.collect do |gene|
-        broken_genes.include? gene
-      end
-    end
     scores = step(:gene_score).load
 
     scores.identifiers = Organism.identifiers(organism)
-    scores.change_key("Associated Gene Name")
-    tsv = tsv.attach scores, :identifiers => Organism.identifiers(organism)
+    tsv = tsv.attach scores, :identifiers => Organism.identifiers(organism), :persist_input => true, :one2one => true
 
     tsv
   end
@@ -312,7 +334,7 @@ module Study
   dep Sample, :pandrugs do |jobname,options|
     study = Study.setup(jobname.dup)
     jobs = study.genotyped_samples.collect{|sample| Sample.setup(sample, :cohort => study); sample.pandrugs(:job, options) }.flatten
-    Misc.bootstrap(jobs, 3, :bar => "Processing gene_sample_mutation_status", :respawn => :always) do |job|
+    Misc.bootstrap(jobs, 3, :bar => "Processing sample pandrugs", :respawn => :always) do |job|
       job.produce
       nil
     end
@@ -329,19 +351,31 @@ module Study
     io = Misc.open_pipe do |sin|
       sin.puts header
 
-      TSV.traverse dependencies, :type => :array do |job|
+      TSV.traverse dependencies, :type => :array, :bar => "Joining sample information" do |job|
         sample = job.clean_name.split(":").last
         TSV.traverse job, :type => :array do |line|
           next if line =~ /^#/
-            gene,*rest = line.split("\t")
-          parts = [gene, sample]
+
+          gene,*rest = line.split("\t")
+
+          ss = rest.collect{|r| r.empty? ? [""] : r.split("|",-1)}
+          if ss.collect{|p| p.length}.uniq.length > 1
+            ppp line
+            raise
+          end
+          num = rest.first.split("|").length
+          sample_str = ([sample] * num) * "|"
+
+          parts = [gene, sample_str]
           parts.concat rest
+
           sin.puts parts * "\t"
         end
       end
     end
 
-    TSV.collapse_stream io
+    #TSV.collapse_stream io
+    io
   end
 end
 

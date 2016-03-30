@@ -26,7 +26,6 @@ Pandrugs=/$PWD filter="*.rb *.rake Rakefile *.rdoc *.R *.sh *.js *.haml *.sass *
    entity=entity{
     Sample=Sample{
      Pandrugs.haml
-     Pandrugs_new.haml
     }
     Study=Study{
      Pandrugs.haml

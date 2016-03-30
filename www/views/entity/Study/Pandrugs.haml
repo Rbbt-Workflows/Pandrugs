@@ -27,7 +27,7 @@
     = graph Pandrugs.knowledge_base do |kb|
       - kb.format["Gene"] = "Ensembl Gene ID"
       - a = kb.subset('gene_drugs', :source => affected_genes, :target => :all)
-      - a = a.select{|a| a.info["score"].to_f > 0.7}
+      - a = a.select{|a| a.info["Drug Score"].to_f > 0.5}
       - add_associations a
       - p = Genomics.knowledge_base.subset("pina", :source => a.source,  :target => a.source)
       - add_associations p
