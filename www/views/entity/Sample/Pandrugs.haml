@@ -9,6 +9,28 @@
 - drug_score_threshold = 0.5 unless defined? drug_score_threshold and drug_score_threshold
 - gene_score_threshold = 0.5 unless defined? gene_score_threshold and gene_score_threshold
 
+- action_card.description do
+  :markdown
+
+    The table shows all the drugs that target affected genes in the sample, or
+    for which the sample might have sensitivity or resistance based on them.
+    The `Drug Score` is the strength of the association between the drug and
+    the affected gene. The `Gene Score` measure the severity of the gene
+    mutation, and considers the predicted damage on the gene as well as the
+    importance of the gene itself.
+
+    The graph show the more relevant associations (the thresholds can be change
+    in the action parameters).  The genes are represented as circles. Approved
+    drugs are represented by triangles and drugs in clinical trials are
+    represented as squares. Green edges represent sensitivity to the drug and
+    red arrows represent resistance. The size of the edge represents the `Drug
+    Score` value. Click on the edge to display the associated information. Click
+    on the gene to open the gene report.
+
+
+    NOTE: Drugs associated with genes for are not filtered based on the cancer
+    type for which they are originally prescribed.
+
 = action_card_render action_card do
   - affected_genes = sample.get_genes :affected
   - broken_genes = sample.get_genes(:broken).name

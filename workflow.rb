@@ -374,8 +374,7 @@ module Study
       end
     end
 
-    #TSV.collapse_stream io
-    io
+    TSV.collapse_stream io
   end
 end
 
