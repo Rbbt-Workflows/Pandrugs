@@ -1,6 +1,7 @@
 require 'rbbt-util'
 require 'rbbt/workflow'
 
+
 Misc.add_libdir if __FILE__ == $0
 
 require 'rbbt/sources/organism'
@@ -11,6 +12,7 @@ require 'rbbt/knowledge_base/Pandrugs'
 Workflow.require_workflow "Sample"
 Workflow.require_workflow "Study"
 Workflow.require_workflow "InterPro"
+
 module Pandrugs
   extend Workflow
 
@@ -33,10 +35,10 @@ module Pandrugs
     types = TSV.setup({}, :key_field => "Associated Gene Name", :fields => ["Oncogene/Tumor Suppressor"], :type => :single)
 
     TSV.traverse Rbbt.data["CGC.tsv"].find(:lib), :fields => ["Molecular Genetics"], :type => :single, :into => types, :header_hash => "" do |gene,type|
-      n_type = case type 
-               when "Dom" 
-                 "Oncogene" 
-               when "Rec" 
+      n_type = case type
+               when "Dom"
+                 "Oncogene"
+               when "Rec"
                  "Tumor suppressor"
                else
                  next
@@ -45,10 +47,10 @@ module Pandrugs
     end
 
     TSV.traverse Rbbt.data["HCD.oncodriveROLE.0.3-0.7.txt"].find(:lib), :fields => ["oncodriveROLE"], :type => :single, :into => types, :header_hash => "" do |gene,type|
-      n_type = case type 
-               when "Activating" 
-                 "Oncogene" 
-               when "Loss of function" 
+      n_type = case type
+               when "Activating"
+                 "Oncogene"
+               when "Loss of function"
                  "Tumor suppressor"
                else
                  next
@@ -172,7 +174,7 @@ module Pandrugs
     Pandrugs.job(:gene_cancer_role, nil)
   end
   task :gene_score => :tsv do
-    
+
     organism = step(:organism).load
 
     clinvar = ClinVar.mi_summary.tsv :fields => ["ClinicalSignificance"], :type => :single, :persist => true
@@ -285,7 +287,7 @@ module Pandrugs
 
         if pfam_domains.any?
           if (good_pfam_domains & pfam_domains).any?
-            score += 0.125 
+            score += 0.125
           else
             score += 0.125/2
           end
@@ -305,16 +307,22 @@ module Pandrugs
 end
 
 module Sample
-  dep :gene_mutation_status
+
   dep :organism
-  dep :affected_genes, :principal => true
-  dep Pandrugs, :gene_score
+  dep :affected_genes, :principal => true, :compute => :produce
   dep Pandrugs, :annotate_genes, :genes => :affected_genes, :organism => :organism
+  task :pandrugs_annotated_genes => :tsv do
+    TSV.get_stream step(:annotate_genes)
+  end
+
+  dep :pandrugs_annotated_genes
+  dep :gene_mutation_status, :principal => true, :compute => :produce
+  dep Pandrugs, :gene_score
   task :pandrugs => :tsv do
 
     gene_status = step(:gene_mutation_status).load
     affected_genes = gene_status.select("affected" => "true").keys
-    tsv = step(:annotate_genes).load
+    tsv = step(:pandrugs_annotated_genes).load
     tsv.swap_id("Associated Gene Name", "Ensembl Gene ID", :persist => true)
 
     scores = step(:gene_score).load
@@ -329,20 +337,11 @@ end
 
 module Study
 
-  extend Workflow
-
-  dep Sample, :pandrugs do |jobname,options|
+  dep Sample, :pandrugs, :compute => :bootstrap do |jobname,options|
     study = Study.setup(jobname.dup)
-    jobs = study.genotyped_samples.collect{|sample| Sample.setup(sample, :cohort => study); sample.pandrugs(:job, options) }.flatten
-    Misc.bootstrap(jobs, 3, :bar => "Processing sample pandrugs", :respawn => :always) do |job|
-      job.produce
-      nil
-    end
-    jobs
+    study.genotyped_samples.collect{|sample| Sample.setup(sample, :cohort => study); sample.pandrugs(:job, options) }.flatten
   end
-
   task :pandrugs => :tsv do
-    Step.wait_for_jobs dependencies
     parser = TSV::Parser.new dependencies.first
     fields = parser.fields
     fields.unshift "Sample"
