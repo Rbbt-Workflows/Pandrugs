@@ -357,25 +357,24 @@ module Study
           next if line =~ /^#/
 
           gene,*rest = line.split("\t")
+          rest_split = rest.collect{|r| r.empty? ? [" "] : r.split("|",-1).collect{|v| v.empty? ? " " : v}}
 
-          ss = rest.collect{|r| r.empty? ? [""] : r.split("|",-1)}
-          if ss.collect{|p| p.length}.uniq.length > 1
-            ppp line
-            raise
+          if rest_split.collect{|p| p.length}.uniq.length > 1
+            raise "Number of fields does not match in:\nline"
           end
-          num = rest.first.split("|").length
+
+          num = rest_split.first.length
           sample_str = ([sample] * num) * "|"
 
           parts = [gene, sample_str]
-          parts.concat rest
+          parts.concat rest_split.collect{|v| v*"|"}
 
           sin.puts parts * "\t"
         end
       end
     end
 
-    #TSV.collapse_stream io
-    io
+    TSV.collapse_stream io
   end
 end
 
