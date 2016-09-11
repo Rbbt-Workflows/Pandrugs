@@ -70,20 +70,19 @@ module Pandrugs
     TSV.collapse_stream dumper.stream
   end
 
-  dep :COSMIC_incidence
+  dep :COSMIC_incidence, :compute => :produce
   task :COSMIC_gene_incidence => :tsv do
     organism = COSMIC.organism
-    Step.wait_for_jobs dependencies
 
     io = CMD.cmd("cut -f 1 '#{step(:COSMIC_incidence).path}'", :pipe => true)
     job = Sequence.job(:mutated_isoforms_fast, nil, :mutations => io, :principal => true, :non_synonymous => true, :organism => organism)
-    job.run(true)
+    job.produce
 
     incidence = step(:COSMIC_incidence).load
 
     index = Organism.identifiers(organism).index :persist => true
 
-    dumper = TSV::Dumper.new :key_field => "Ensembl Gene ID", :fields => ["Sample"], :type => :flat
+    dumper = TSV::Dumper.new :key_field => "Ensembl Gene ID", :fields => ["Sample"], :type => :double
     dumper.init
     TSV.traverse job, :into => dumper, :bar => true do |mut, mis|
       mut = mut.first if Array === mut
@@ -93,6 +92,7 @@ module Pandrugs
         index[mi.partition(":").first]
       end.uniq.compact
 
+      samples = samples.collect{|s| s.split("|")}
       res = genes.collect do |gene|
         [gene, samples]
       end
@@ -103,40 +103,41 @@ module Pandrugs
     TSV.collapse_stream dumper.stream
   end
 
-  dep :COSMIC_gene_incidence
-  dep :COSMIC_incidence
+  dep :COSMIC_gene_incidence, :compute => :produce
   task :COSMIC_counts => :tsv do
     Misc.open_pipe do |sin|
       dumper_mut = TSV::Dumper.new :key_field => "Thing", :fields => ["Sample count"], :type => :single
       dumper_mut.init
       max = 0
-      TSV.traverse step(:COSMIC_incidence), :into => dumper_mut, :bar => true do |mut,samples|
+      cosmic_incidence = step(:COSMIC_gene_incidence).step(:COSMIC_incidence)
+      TSV.traverse cosmic_incidence, :into => dumper_mut, :bar => true do |mut,values|
+        samples = values.first
         mut = mut.first if Array === mut
         count = samples.length
         max = count if count > max
         [mut, count]
       end
-      Misc.consume_stream(dumper_mut.stream,false, sin)
+      Misc.consume_stream(dumper_mut.stream,false, sin, false)
       set_info :max_mutations, max
 
       dumper_gene = TSV::Dumper.new :key_field => "Thing", :fields => ["Sample count"], :type => :single
       max = 0
-      TSV.traverse step(:COSMIC_gene_incidence), :into => dumper_gene, :bar => true do |gene,samples|
+      TSV.traverse step(:COSMIC_gene_incidence), :into => dumper_gene, :bar => true do |gene,values|
+        samples = values.first
         gene = gene.first if Array === gene
         count = samples.length
         max = count if count > max
         [gene, count]
       end
-      Misc.consume_stream(dumper_gene.stream,false, sin)
+      Misc.consume_stream(dumper_gene.stream,false, sin, false)
       set_info :max_genes, max
     end
   end
 
-  dep Sample, :sequence_ontology, :principal => true, :non_synonymous => true
-  dep Sample, :DbNSFP
-  dep Sample, :genomic_mutation_splicing_consequence, :principal => true
+  dep Sample, :sequence_ontology, :principal => true, :non_synonymous => true, :compute => :produce
+  dep Sample, :DbNSFP, :compute => :produce
+  dep Sample, :genomic_mutation_splicing_consequence, :principal => true, :compute => :produce
   task :mi_info4score => :tsv do
-    Step.wait_for_jobs dependencies
     tsv = step(:sequence_ontology).load.to_double
 
     tsv = tsv.attach(step(:DbNSFP))
@@ -163,14 +164,14 @@ module Pandrugs
     end
   end
 
-  dep :mi_info4score
-  dep Sample, :homozygous
-  dep Sample, :mi
-  dep Sample, :organism
-  dep InterPro, :domains, :mutated_isoforms => :mi, :organism => :organism
-  dep Sample, :genomic_mutation_annotations
-  dep Sample, :mutation_info
-  dep :gene_cancer_role do |jobname,options|
+  dep :mi_info4score, :compute => :produce
+  dep Sample, :homozygous, :compute => :produce
+  dep Sample, :mi, :compute => :produce
+  dep Sample, :organism, :compute => :produce
+  dep InterPro, :domains, :mutated_isoforms => :mi, :organism => :organism, :compute => :produce
+  dep Sample, :genomic_mutation_annotations, :compute => :produce
+  dep Sample, :mutation_info, :compute => :produce
+  dep :gene_cancer_role, :compute => :produce do |jobname,options|
     Pandrugs.job(:gene_cancer_role, nil)
   end
   task :gene_score => :tsv do
@@ -310,7 +311,7 @@ module Sample
 
   dep :organism
   dep :affected_genes, :principal => true, :compute => :produce
-  dep Pandrugs, :annotate_genes, :genes => :affected_genes, :organism => :organism
+  dep Pandrugs, :annotate_genes, :genes => :affected_genes, :organism => :organism, :compute => :produce
   task :pandrugs_annotated_genes => :tsv do
     TSV.get_stream step(:annotate_genes)
   end
