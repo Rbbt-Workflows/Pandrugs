@@ -34,7 +34,7 @@ module Pandrugs
   task :gene_cancer_role => :tsv do
     types = TSV.setup({}, :key_field => "Associated Gene Name", :fields => ["Oncogene/Tumor Suppressor"], :type => :single)
 
-    TSV.traverse Rbbt.data["CGC.tsv"].find(:lib), :fields => ["Molecular Genetics"], :type => :single, :into => types, :header_hash => "" do |gene,type|
+    TSV.traverse Rbbt.root.data["CGC.tsv"].find(:lib), :fields => ["Molecular Genetics"], :type => :single, :into => types, :header_hash => "" do |gene,type|
       n_type = case type
                when "Dom"
                  "Oncogene"
@@ -46,7 +46,7 @@ module Pandrugs
       [gene, n_type]
     end
 
-    TSV.traverse Rbbt.data["HCD.oncodriveROLE.0.3-0.7.txt"].find(:lib), :fields => ["oncodriveROLE"], :type => :single, :into => types, :header_hash => "" do |gene,type|
+    TSV.traverse Rbbt.root.data["HCD.oncodriveROLE.0.3-0.7.txt"].find(:lib), :fields => ["oncodriveROLE"], :type => :single, :into => types, :header_hash => "" do |gene,type|
       n_type = case type
                when "Activating"
                  "Oncogene"
