@@ -169,7 +169,8 @@ module Pandrugs
   dep Sample, :mi, :compute => :produce
   dep Sample, :organism, :compute => :produce
   dep InterPro, :domains, :mutated_isoforms => :mi, :organism => :organism, :compute => :produce
-  dep Sample, :genomic_mutation_annotations, :compute => :produce
+  dep Sample, :annotate_Genomes1000, :compute => :produce
+  dep Sample, :annotate_DbSNP, :compute => :produce
   dep Sample, :mutation_info, :compute => :produce
   dep :gene_cancer_role, :compute => :produce do |jobname,options|
     Pandrugs.job(:gene_cancer_role, nil)
@@ -201,7 +202,7 @@ module Pandrugs
     organism = step(:organism).load
     dumper = TSV::Dumper.new :key_field => "Ensembl Gene ID", :fields => ["Gene Score"], :type => :single, :namespace => organism
     dumper.init
-    pasted = TSV.paste_streams([step(:mi_info4score), step(:genomic_mutation_annotations), step(:mutation_info)])
+    pasted = TSV.paste_streams([step(:mi_info4score), step(:annotate_Genomes1000), step(:annotate_DbSNP), step(:mutation_info)])
     parser = TSV::Parser.new pasted, :type => :double
     fields = parser.fields
     gene_pos = fields.index "Ensembl Gene ID"
