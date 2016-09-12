@@ -180,7 +180,7 @@ module Pandrugs
     organism = step(:organism).load
 
     clinvar = ClinVar.mi_summary.tsv :fields => ["ClinicalSignificance"], :type => :single, :persist => true
-    essenciality = Rbbt.data["gene_essentiality_score.tsv"].tsv :header_hash => '', :fields => ["max_min_score"], :type => :single, :cast => :to_f
+    essenciality = Rbbt.root.data["gene_essentiality_score.tsv"].tsv :header_hash => '', :fields => ["max_min_score"], :type => :single, :cast => :to_f
     name_index = Organism.identifiers(organism).index :persist => true, :target => "Associated Gene Name"
     ensp2ensg = Organism.identifiers(organism).index :persist => true, :target => "Ensembl Gene ID", :fields => ["Ensembl Protein ID"]
 
@@ -189,7 +189,7 @@ module Pandrugs
     domains = step(:domains).join.path.tsv :fields => ["InterPro Domain"], :type => :flat
     intrp2pfam = InterPro.pfam_equivalences.index :target => "Pfam Domain", :persist => true
 
-    good_pfam_domains = Rbbt.data["domains.tsv"].tsv(:key_field => ["Domain code"], :fields => [], :type => :list).keys
+    good_pfam_domains = Rbbt.root.data["domains.tsv"].tsv(:key_field => ["Domain code"], :fields => [], :type => :list).keys
 
     homozygous = step(:homozygous).load
 
