@@ -7,6 +7,7 @@ Misc.add_libdir if __FILE__ == $0
 require 'rbbt/sources/organism'
 require 'rbbt/sources/Pandrugs'
 require 'rbbt/sources/clinvar'
+require 'rbbt/sources/pfam'
 require 'rbbt/knowledge_base/Pandrugs'
 
 Workflow.require_workflow "Sample"
