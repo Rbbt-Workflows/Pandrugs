@@ -141,7 +141,7 @@ module Pandrugs
   task :mi_info4score => :tsv do
     tsv = step(:sequence_ontology).load.to_double
 
-    tsv = tsv.attach(step(:DbNSFP))
+    tsv = tsv.attach(step(:DbNSFP).path)
 
     spl = step(:genomic_mutation_splicing_consequence)
     tsv = tsv.attach(spl)
