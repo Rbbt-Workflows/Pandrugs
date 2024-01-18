@@ -11,6 +11,7 @@ require 'rbbt/sources/pfam'
 require 'rbbt/knowledge_base/Pandrugs'
 
 Workflow.require_workflow "Sample"
+Workflow.require_workflow "Genomics"
 Workflow.require_workflow "Study"
 Workflow.require_workflow "InterPro"
 
@@ -62,10 +63,12 @@ module Pandrugs
     types.to_s
   end
 
-  task :COSMIC_incidence => :tsv do
+  input :organism, :string, "Organism code", Organism.default_code("Hsa")
+  task :COSMIC_incidence => :tsv do |organism|
     dumper = TSV::Dumper.new :key_field => "Genomic Mutation", :fields => ["Sample"], :type => :flat
     dumper.init
-    TSV.traverse COSMIC.mutations, :key_field => "Genomic Mutation", :fields => ["Sample name"], :bar => true, :into => dumper do |mut,values|
+    build = Organism.GRC_build(organism)
+    TSV.traverse COSMIC[build].mutations, :key_field => "Genomic Mutation", :fields => ["Sample name"], :bar => true, :into => dumper do |mut,values|
       [mut, values]
     end
     TSV.collapse_stream dumper.stream
@@ -73,13 +76,13 @@ module Pandrugs
 
   dep :COSMIC_incidence, :compute => :produce
   task :COSMIC_gene_incidence => :tsv do
-    organism = COSMIC.organism
+    incidence = step(:COSMIC_incidence).load
+    organism = step(:COSMIC_incidence).inputs[:organism]
 
     io = CMD.cmd("cut -f 1 '#{step(:COSMIC_incidence).path}'", :pipe => true)
     job = Sequence.job(:mutated_isoforms_fast, nil, :mutations => io, :principal => true, :non_synonymous => true, :organism => organism)
     job.produce
 
-    incidence = step(:COSMIC_incidence).load
 
     index = Organism.identifiers(organism).index :persist => true
 
@@ -176,11 +179,14 @@ module Pandrugs
   dep :gene_cancer_role, :compute => :produce do |jobname,options|
     Pandrugs.job(:gene_cancer_role, nil)
   end
-  task :gene_score => :tsv do
+  input :use_COSMIC, :boolean, "Use COSMIC to score variants", false
+  task :gene_score => :tsv do |use_COSMIC|
 
     organism = step(:organism).load
 
-    clinvar = ClinVar.mi_summary.tsv :fields => ["ClinicalSignificance"], :type => :single, :persist => true
+    build = Organism.hg_build(organism)
+
+    clinvar = ClinVar[build].mi_summary.tsv :fields => ["ClinicalSignificance"], :type => :single, :persist => true
     essenciality = Rbbt.root.data["gene_essentiality_score.tsv"].tsv :header_hash => '', :fields => ["max_min_score"], :type => :single, :cast => :to_f
     name_index = Organism.identifiers(organism).index :persist => true, :target => "Associated Gene Name"
     ensp2ensg = Organism.identifiers(organism).index :persist => true, :target => "Ensembl Gene ID", :fields => ["Ensembl Protein ID"]
@@ -194,11 +200,13 @@ module Pandrugs
 
     homozygous = step(:homozygous).load
 
-    count_job = Pandrugs.job(:COSMIC_counts)
-    count_job.produce
-    cosmic_counts = count_job.path.tsv :persist => true, :persist_file => count_job.file(:persistence)
-    max_muts = count_job.info[:max_mutations]
-    max_genes = count_job.info[:max_genes]
+    if use_COSMIC
+      count_job = Pandrugs.job(:COSMIC_counts)
+      count_job.produce
+      cosmic_counts = count_job.path.tsv :persist => true, :persist_file => count_job.file(:persistence)
+      max_muts = count_job.info[:max_mutations]
+      max_genes = count_job.info[:max_genes]
+    end
 
     organism = step(:organism).load
     dumper = TSV::Dumper.new :key_field => "Ensembl Gene ID", :fields => ["Gene Score"], :type => :single, :namespace => organism
@@ -245,24 +253,26 @@ module Pandrugs
 
 
         # COSMIC Freq
-        mut_samples = cosmic_counts[mutation]
-        gene_samples = cosmic_counts[gene]
+        if use_COSMIC
+          mut_samples = cosmic_counts[mutation]
+          gene_samples = cosmic_counts[gene]
 
-        if mut_samples and oncogene
-          mut_samples = mut_samples.to_i
-          if mut_samples > 100
-            score += 0.125/3
-          else
-            score += 0.125/3 * Math.log(mut_samples)/Math.log(max_muts)
+          if mut_samples and oncogene
+            mut_samples = mut_samples.to_i
+            if mut_samples > 100
+              score += 0.125/3
+            else
+              score += 0.125/3 * Math.log(mut_samples)/Math.log(max_muts)
+            end
           end
-        end
 
-        if gene_samples
-          gene_samples = gene_samples.to_i
-          if gene_samples > 100
-            score += oncogene ? 0.125/3 : 0.03125
-          else
-            score += (oncogene ? 0.125/3 : 0.03125) * Math.log(gene_samples)/Math.log(max_genes)
+          if gene_samples
+            gene_samples = gene_samples.to_i
+            if gene_samples > 100
+              score += oncogene ? 0.125/3 : 0.03125
+            else
+              score += (oncogene ? 0.125/3 : 0.03125) * Math.log(gene_samples)/Math.log(max_genes)
+            end
           end
         end
 
